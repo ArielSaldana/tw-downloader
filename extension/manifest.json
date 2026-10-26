@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "In-house Twitter Media Saver",
+  "description": "Save videos and original-size images from X/Twitter. Local code, no tracking, no download servers.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "111",
+  "permissions": ["downloads"],
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_icon": { "16": "icon16.png", "32": "icon32.png" },
+    "default_title": "Twitter Media Saver",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://www.x.com/*",
+        "https://twitter.com/*",
+        "https://www.twitter.com/*"
+      ],
+      "js": ["page-media.js", "observer.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://www.x.com/*",
+        "https://twitter.com/*",
+        "https://www.twitter.com/*"
+      ],
+      "js": ["media.js", "content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+  }
+}
