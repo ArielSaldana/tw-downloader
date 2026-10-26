@@ -260,3 +260,25 @@ footer {
     --error: #ffaaa0;
   }
 }
+:root[data-plugin="ig-downloader"] {
+  --canvas: #faf5f5;
+  --text: #382139;
+  --muted: #745c70;
+  --line: #eadce7;
+  --tint: #f5e8ee;
+  --accent: #70325f;
+  --accent-hover: #8b4078;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-plugin="ig-downloader"] {
+    --canvas: #211620;
+    --surface: #2b1d2b;
+    --text: #faeaf4;
+    --muted: #cfb2c7;
+    --line: #53394e;
+    --tint: #40283a;
+    --accent: #ffc2da;
+    --accent-hover: #ffd5e6;
+    --on-accent: #382139;
+  }
+}

@@ -1,4 +1,17 @@
-const { normalizeMedia } = globalThis.__TW_DOWNLOADER_MEDIA_V1__;
+const site = globalThis.__MEDIA_SAVER_SITE__;
+const { normalizeMedia } = site;
+document.title = site.title;
+document.querySelector("h1").textContent = site.title.replace(
+  " Media Saver",
+  " Saver",
+);
+document.querySelector(".eyebrow").textContent =
+  site.id === "ig-downloader"
+    ? "VIDEOS & FULL-SIZE IMAGES"
+    : "VIDEOS & ORIGINAL IMAGES";
+document.documentElement.dataset.plugin = site.id;
+document.querySelector("#empty-help").textContent =
+  `Open a post on ${site.label}, then scan again. Just installed or updated? Refresh that tab once to connect.`;
 const list = document.querySelector("#videos");
 const status = document.querySelector("#status");
 const empty = document.querySelector("#empty");
@@ -24,7 +37,7 @@ function renderMedia(media, index) {
   heading.append(title, type);
   const text = document.createElement("p");
   text.className = "caption";
-  text.textContent = media.text || `Post ${media.tweetId}`;
+  text.textContent = media.text || `Post ${site.postId(media)}`;
   const row = document.createElement("div");
   row.className = "row";
   const select = document.createElement("select");
@@ -73,21 +86,19 @@ function renderMedia(media, index) {
     const info = document.createElement("span");
     info.className = "image-info";
     const variant = media.variants[0];
-    const format = new URL(variant.url).searchParams
-      .get("format")
-      .toUpperCase();
-    info.textContent = `${variant.width ? `${variant.width} × ${variant.height}` : "Original size"} · ${format}`;
-    info.title = "Original-size image";
+    const format = site.imageFormat(variant);
+    info.textContent = `${variant.width ? `${variant.width} × ${variant.height}` : site.imageLabel} · ${format}`;
+    info.title = site.imageLabel;
     row.append(info, save);
   } else {
     row.append(select, save);
   }
   const destination = document.createElement("p");
   destination.className = "destination";
-  destination.textContent = `Saves to twitter/@${media.author || "unknown"}/`;
+  destination.textContent = `Saves to ${site.folder}/@${media.author || "unknown"}/`;
   const link = document.createElement("a");
   link.className = "post-link";
-  link.href = `https://x.com/i/status/${media.tweetId}`;
+  link.href = site.postUrl(media);
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = "View post ↗";
@@ -110,14 +121,14 @@ async function scan() {
       active: true,
       currentWindow: true,
     });
-    if (!tab?.id) throw new Error("Open an X/Twitter tab to find media.");
+    if (!tab?.id) throw new Error(`Open a ${site.label} tab to find media.`);
     const response = await chrome.tabs.sendMessage(
       tab.id,
       { type: "LIST_MEDIA" },
       { frameId: 0 },
     );
     if (!response?.ok || !Array.isArray(response.media))
-      throw new Error("Refresh your X tab once, then scan again.");
+      throw new Error(`Refresh your ${site.label} tab once, then scan again.`);
     const media = response.media
       .slice(0, 150)
       .map(normalizeMedia)
@@ -131,7 +142,7 @@ async function scan() {
     media.forEach(renderMedia);
   } catch {
     empty.hidden = false;
-    setStatus("Open X/Twitter and refresh the tab once, then scan again.");
+    setStatus(`Open ${site.label} and refresh the tab once, then scan again.`);
   } finally {
     refresh.disabled = false;
     refresh.textContent = "Scan again";

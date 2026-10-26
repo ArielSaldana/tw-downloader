@@ -5,7 +5,10 @@ const vm = require("node:vm");
 const { mp4, tweet, photo } = require("./fixtures.cjs");
 
 const context = vm.createContext({ URL });
-vm.runInContext(readFileSync("extension/media.js", "utf8"), context);
+vm.runInContext(
+  readFileSync("plugins/tw-downloader/extension/media.js", "utf8"),
+  context,
+);
 const media = context.__TW_DOWNLOADER_MEDIA_V1__;
 const plain = (value) => JSON.parse(JSON.stringify(value));
 

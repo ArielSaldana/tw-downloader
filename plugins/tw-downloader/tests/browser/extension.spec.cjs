@@ -14,7 +14,7 @@ function postHtml(id = "123456789") {
 
 test.beforeEach(async () => {
   responseData = { data: { result: tweet() } };
-  const extension = path.resolve("extension");
+  const extension = path.resolve("plugins/tw-downloader/extension");
   context = await chromium.launchPersistentContext("", {
     channel: "chromium",
     headless: true,

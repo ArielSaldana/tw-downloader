@@ -1,11 +1,11 @@
 {
-  "name": "tw-downloader",
+  "name": "local-browser-plugins",
   "version": "0.1.0",
   "private": true,
-  "description": "Auditable, dependency-free Chrome extension for saving Twitter videos and images",
+  "description": "Auditable Chrome media plugins for Twitter and Instagram",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/*.test.cjs",
+    "test": "node --test plugins/*/tests/*.test.cjs",
     "test:browser": "playwright test",
     "check": "node scripts/check.mjs && prettier --check .",
     "format": "prettier --write . && node scripts/build.mjs",

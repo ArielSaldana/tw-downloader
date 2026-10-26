@@ -1,7 +1,8 @@
 const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
-  testDir: "./tests/browser",
+  testDir: "./plugins",
+  testMatch: "**/tests/browser/**/*.spec.cjs",
   fullyParallel: false,
   workers: 1,
   timeout: 30000,

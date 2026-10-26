@@ -28,9 +28,15 @@ function setup(failure) {
       },
     },
     importScripts: () =>
-      vm.runInContext(readFileSync("extension/media.js", "utf8"), context),
+      vm.runInContext(
+        readFileSync("plugins/tw-downloader/extension/media.js", "utf8"),
+        context,
+      ),
   });
-  vm.runInContext(readFileSync("extension/background.js", "utf8"), context);
+  vm.runInContext(
+    readFileSync("plugins/tw-downloader/extension/background.js", "utf8"),
+    context,
+  );
   return {
     downloads,
     send: (message, sender) =>

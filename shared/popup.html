@@ -3,9 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Twitter Media Saver</title>
+    <title>Media Saver</title>
     <link rel="stylesheet" href="popup.css" />
     <script src="media.js" defer></script>
+    <script src="site.js" defer></script>
     <script src="popup.js" defer></script>
   </head>
   <body>
@@ -28,12 +29,11 @@
         <span class="empty-icon" aria-hidden="true">↘</span>
         <h3>Find something you want to keep.</h3>
         <p>
-          Open a post on X, then scan again. Just installed or updated? Refresh
-          your X tab once to connect.
+          <span id="empty-help"></span>
         </p>
         <p>
-          Supports images, MP4 videos, and GIF posts. Streaming-only videos
-          aren’t supported yet.
+          Supports images and MP4 videos. Streaming-only videos aren’t supported
+          yet.
         </p>
       </div>
     </main>
