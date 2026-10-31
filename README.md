@@ -1,13 +1,14 @@
 # Local Browser Plugins
 
-A collection of small, auditable Chrome extensions. Each plugin installs independently and runs entirely from local source: no runtime dependencies, tracking, download servers, or automatic updates.
+A collection of small, auditable Chrome extensions. Each plugin installs independently and runs entirely from local source: no remote code, tracking, download servers, or automatic updates.
 
 | Plugin                                           | What it saves                                            | Download folders                        | Install directory                  |
 | ------------------------------------------------ | -------------------------------------------------------- | --------------------------------------- | ---------------------------------- |
 | [tw-downloader](plugins/tw-downloader/README.md) | X/Twitter images, MP4 videos, GIF posts                  | `Downloads/twitter/@original_poster/`   | `plugins/tw-downloader/extension/` |
 | [ig-downloader](plugins/ig-downloader/README.md) | Instagram photos, reels, MP4 videos, and mixed carousels | `Downloads/instagram/@original_poster/` | `plugins/ig-downloader/extension/` |
+| [rd-downloader](plugins/rd-downloader/README.md) | Reddit images, galleries, and videos with audio          | `Downloads/reddit/@username/`           | `plugins/rd-downloader/extension/` |
 
-Both plugins provide compact hover/focus download icons that don't shift posts, separate controls for album items, and a light/dark toolbar popup with video quality choices. They use the post's own author metadata rather than the profile you're browsing; unknown handles go into `@unknown`.
+All plugins provide compact hover/focus download icons that don't shift posts, separate controls for album items, and a light/dark toolbar popup with video quality choices. They use the post's own author metadata rather than the profile you're browsing; unknown handles go into `@unknown`.
 
 <p>
   <img src="plugins/tw-downloader/docs/popup-light.png" width="300" alt="Twitter downloader popup" />
@@ -23,6 +24,8 @@ Both plugins provide compact hover/focus download icons that don't shift posts, 
 
 No build step or account setup is needed to load the checked-in extensions. Normal access to each website still applies. Review changes before updating local source, then reload the extension and refresh its website tabs. Instagram's signed media links can expire; refresh the post to detect fresh links.
 
+Reddit videos combine separate audio and video tracks locally with bundled MP4Box.js. See its [guide](plugins/rd-downloader/README.md) for permissions and supported formats.
+
 The root `extension/` symlink preserves the original Twitter installation path on systems with symlink support. New installations should use `plugins/tw-downloader/extension/`. The GitHub repository URL remains unchanged.
 
 ## Repository layout
@@ -31,6 +34,7 @@ The root `extension/` symlink preserves the original Twitter installation path o
 plugins/
   tw-downloader/       # Twitter extension, tests, screenshots, and guide
   ig-downloader/       # Instagram extension, tests, screenshots, and guide
+  rd-downloader/       # Reddit extension, local MP4 muxer, tests, and guide
 shared/                # Popup HTML, JavaScript, and CSS source
 scripts/               # Collection build, checks, icons, previews, packaging
 ```
@@ -43,14 +47,14 @@ Run from the repository root with Node.js 22+ and npm:
 
 ```sh
 npm ci --ignore-scripts
-npm run build                      # Synchronize both plugins
-npm test                           # Both parser and authorization suites
+npm run build                      # Synchronize all plugins and bundle the Reddit muxer
+npm test                           # All parser, authorization, and muxer suites
 npx playwright install chromium    # One-time isolated test browser install
-npm run test:browser                # Both loaded-extension browser suites
+npm run test:browser                # All loaded-extension browser suites
 npm run check                      # Permission boundaries, generated files, syntax, formatting
 npm run format                     # Format source and synchronize plugins
 node scripts/icons.mjs             # Regenerate packaged icons
-node scripts/preview.mjs            # Regenerate both plugins' UI previews
+node scripts/preview.mjs            # Regenerate all plugins' UI previews
 npm run package                    # Create one ZIP per plugin in dist/
 ```
 

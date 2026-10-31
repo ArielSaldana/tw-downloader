@@ -2,15 +2,13 @@
 
 ## Project Structure & Module Organization
 
-This directory currently contains no application code, tests, assets, or dependency manifests. No language or framework has been selected. Keep this guide aligned with the actual layout as the project develops.
+The repository contains independent Chrome extensions under `plugins/tw-downloader/`, `plugins/ig-downloader/`, and `plugins/rd-downloader/`. Each plugin has a self-contained `extension/`, Node tests, Playwright browser tests, and a README. Shared popup source lives in `shared/`; build, validation, packaging, and preview tools live in `scripts/`.
 
-When introducing code, group related modules by responsibility. Use clearly named locations such as `src/` for implementation, `tests/` for automated tests, and `assets/` for static resources when those directories suit the selected framework. Document entry points in `README.md`.
+Generated `popup.*`, `page-media.js`, and the Reddit `mux.js` bundle are checked in. Edit their source and run the build; never edit generated copies directly. Reddit's mux source is `plugins/rd-downloader/src/mux.js`.
 
 ## Build, Test, and Development Commands
 
-No build, test, lint, or local development commands are configured yet. Do not assume commands such as `npm test` are available.
-
-When adding tooling, record the exact installation, development, build, and test commands in `README.md`. Include required runtime versions and configuration steps. Prefer reproducible dependency installation and commit the appropriate lockfile.
+Use Node.js 22+ and `npm ci --ignore-scripts` with the committed lockfile. Run `npm run build`, `npm test`, `npm run test:browser`, and `npm run check` for relevant changes. Install the test browser once with `npx playwright install chromium`. `npm run format` formats and rebuilds. Exact commands and plugin-specific packaging are documented in `README.md`.
 
 ## Coding Style & Naming Conventions
 
@@ -18,7 +16,7 @@ Follow the chosen language's standard conventions and use consistent indentation
 
 ## Testing Guidelines
 
-No testing framework or coverage threshold is configured. Select a framework appropriate to the implementation and document its test discovery conventions. Add tests for meaningful behavior changes and bug fixes, including failure cases. Keep tests deterministic and independent of live services where practical.
+Node's test runner discovers `plugins/*/tests/*.test.cjs`; Playwright discovers `plugins/*/tests/browser/**/*.spec.cjs`. Add tests for meaningful behavior changes and bug fixes, including failure cases. Keep tests deterministic and independent of live services where practical.
 
 ## Commit & Pull Request Guidelines
 

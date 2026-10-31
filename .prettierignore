@@ -4,3 +4,6 @@ dist/
 node_modules/
 test-results/
 playwright-report/
+
+plugins/rd-downloader/extension/mux.js
+plugins/rd-downloader/extension/MP4BOX-LICENSE.txt

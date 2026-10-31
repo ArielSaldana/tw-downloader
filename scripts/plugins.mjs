@@ -3,6 +3,17 @@ import { fileURLToPath } from "node:url";
 export const root = new URL("../", import.meta.url);
 export const plugins = [
   {
+    id: "rd-downloader",
+    matches: [
+      "https://www.reddit.com/*",
+      "https://reddit.com/*",
+      "https://old.reddit.com/*",
+      "https://new.reddit.com/*",
+    ],
+    permissions: ["downloads", "offscreen"],
+    hosts: ["https://v.redd.it/*"],
+  },
+  {
     id: "tw-downloader",
     matches: [
       "https://x.com/*",

@@ -2,7 +2,7 @@
   "name": "local-browser-plugins",
   "version": "0.1.0",
   "private": true,
-  "description": "Auditable Chrome media plugins for Twitter and Instagram",
+  "description": "Auditable Chrome media plugins for Twitter, Instagram, and Reddit",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test plugins/*/tests/*.test.cjs",
@@ -16,6 +16,8 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "esbuild": "0.28.2",
+    "mp4box": "2.5.0",
     "prettier": "3.9.10"
   }
 }

@@ -1,6 +1,7 @@
 import { readFile, readdir, access } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
+import { redditBundle } from "./reddit-bundle.mjs";
 import { root, extensionUrl, selectedPlugins } from "./plugins.mjs";
 
 for (const plugin of selectedPlugins()) {
@@ -21,9 +22,19 @@ for (const plugin of selectedPlugins()) {
     await readFile(new URL("manifest.json", directory), "utf8"),
   );
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ["downloads"]);
+  assert.deepEqual(manifest.permissions, plugin.permissions || ["downloads"]);
+  assert.deepEqual(manifest.host_permissions, plugin.hosts);
+  if (plugin.id === "rd-downloader") {
+    const bundle = await redditBundle(false);
+    assert.equal(
+      await readFile(new URL("mux.js", directory), "utf8"),
+      bundle,
+      "Run npm run build for Reddit mux code",
+    );
+    for (const file of ["offscreen.html", "offscreen.js", "MP4BOX-LICENSE.txt"])
+      await access(new URL(file, directory));
+  }
   for (const key of [
-    "host_permissions",
     "optional_permissions",
     "update_url",
     "externally_connectable",
