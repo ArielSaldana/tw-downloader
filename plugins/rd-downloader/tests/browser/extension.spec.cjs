@@ -500,3 +500,178 @@ test("GIF posts save the original animation when Reddit renders a still preview"
   expect(saved.url).toBe("https://i.redd.it/animation.gif");
   expect(saved.filename).toMatch(/\.gif$/);
 });
+
+test("Reddit custom embed exposes a visible Save control before an iframe hydrates", async () => {
+  const requests = [];
+  await context.route("https://api.redgifs.com/**", (route) => {
+    requests.push(route.request().url());
+    return route.fulfill({
+      json: route.request().url().endsWith("/auth/temporary")
+        ? { token: "fixture-token" }
+        : {
+            gif: {
+              id: "calmblueotter",
+              urls: { hd: "https://thumbs2.redgifs.com/CalmBlueOtter.mp4" },
+            },
+          },
+    });
+  });
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute("post-type", "link");
+    post.removeAttribute("content-href");
+    const embed = document.createElement("shreddit-embed");
+    embed.setAttribute(
+      "html",
+      '<iframe src="https://www.redgifs.com/ifr/CalmBlueOtter?foo=1&amp;bar=2"></iframe><script>window.embedExecuted=true</script>',
+    );
+    embed.style.cssText =
+      "display:block;width:400px;height:300px;background:#182c30;color:white";
+    embed.attachShadow({ mode: "closed" }).innerHTML =
+      '<div style="height:300px;display:grid;place-content:center">Embedded player fixture</div>';
+    document.querySelector("[data-media]").replaceChildren(embed);
+  });
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await expect(page.locator("[data-rdd-controls]")).toBeVisible();
+  const panel = await popup();
+  await expect(panel.getByRole("button", { name: "Save MP4" })).toHaveCount(1);
+  await panel.close();
+  expect(requests).toHaveLength(0);
+  expect(await page.evaluate(() => window.embedExecuted)).toBeUndefined();
+  // No hover or live iframe is required to click the actual Save button.
+  await page
+    .locator("[data-rdd-controls]")
+    .click({ position: { x: 16, y: 16 } });
+  await expect
+    .poll(() => worker.evaluate(() => downloadRequests.length))
+    .toBe(1);
+  const [saved] = await worker.evaluate(() => downloadRequests);
+  expect(saved.url).toBe("https://thumbs2.redgifs.com/CalmBlueOtter.mp4");
+  expect(saved.filename).toBe(
+    "reddit/@original_poster/reddit_abc123_abc123.mp4",
+  );
+});
+test("Video controls remain visible when Reddit accepts only named slots", async () => {
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute(
+      "content-href",
+      "https://www.redgifs.com/watch/CalmBlueOtter",
+    );
+    const player = document.createElement("shreddit-player");
+    player.slot = "post-media-container";
+    player.style.cssText =
+      "display:block;width:400px;height:300px;background:#182c30";
+    post.replaceChildren(player);
+    post.attachShadow({ mode: "open" }).innerHTML =
+      '<slot name="post-media-container"></slot>';
+  });
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await expect(page.locator("[data-rdd-controls]")).toBeVisible();
+  await page
+    .locator("[data-rdd-controls]")
+    .click({ position: { x: 16, y: 16 }, trial: true });
+});
+test("A recognized video post has a control even before Reddit creates the player", async () => {
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute(
+      "content-href",
+      "https://www.redgifs.com/watch/CalmBlueOtter",
+    );
+    post.setAttribute("post-type", "video");
+    post.id = post.getAttribute("post-id");
+    post.removeAttribute("post-id");
+    document.querySelector("[data-media]").innerHTML =
+      '<div style="height:300px;background:#182c30">Player loading</div>';
+  });
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await expect(page.locator("[data-rdd-controls]")).toBeVisible();
+});
+
+test("A display-contents player loader anchors to its visible media container without duplicates", async () => {
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.removeAttribute("content-href");
+    post.dataset.postId = post.getAttribute("post-id");
+    post.removeAttribute("post-id");
+    // Remove the permalink too, so identity must come from data-post-id.
+    post.querySelector("a").remove();
+    const container = document.querySelector("[data-media]");
+    container.slot = "post-media-container";
+    container.innerHTML =
+      '<div bundlename="shreddit_player_loader" style="display:contents"><shreddit-player style="display:contents"></shreddit-player></div>';
+    container
+      .querySelector("shreddit-player")
+      .setAttribute(
+        "packaged-media-json",
+        JSON.stringify({ source: "https://v.redd.it/clip1" }),
+      );
+  });
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await expect(page.locator("[data-rdd-controls]")).toBeVisible();
+  await page
+    .locator("[data-rdd-controls]")
+    .click({ position: { x: 16, y: 16 }, trial: true });
+  const panel = await popup();
+  await expect(panel.getByRole("button", { name: "Save MP4" })).toHaveCount(1);
+});
+
+test("Video controls follow player scrolling and resizing, then disappear with the post", async () => {
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute("content-href", "https://i.imgur.com/fixture.mp4");
+    document.body.style.cssText = "padding-top:250px;height:2000px";
+    const player = document.createElement("shreddit-player");
+    player.style.cssText =
+      "display:block;width:400px;height:300px;background:#182c30";
+    document.querySelector("[data-media]").replaceChildren(player);
+  });
+  const control = page.locator("[data-rdd-controls]");
+  await expect(control).toHaveCount(1);
+  await expect(control).toBeVisible();
+  const before = await control.boundingBox();
+  await page.evaluate(() => scrollTo(0, 150));
+  await expect
+    .poll(async () => (await control.boundingBox()).y)
+    .toBe(before.y - 150);
+  await page.locator("shreddit-player").evaluate((player) => {
+    player.style.width = "320px";
+  });
+  await expect
+    .poll(async () => (await control.boundingBox()).x)
+    .toBe(before.x - 80);
+  await control.click({ position: { x: 16, y: 16 } });
+  await expect
+    .poll(() => worker.evaluate(() => downloadRequests.length))
+    .toBe(1);
+  await page.evaluate(() => scrollTo(0, 1000));
+  await expect(control).toBeHidden();
+  await page.locator("shreddit-post").evaluate((post) => post.remove());
+  await expect(control).toHaveCount(0);
+});
+
+test("Video overlays stay inside a clipped carousel and hide for clipped-out slides", async () => {
+  await page.evaluate(() => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute("content-href", "https://i.imgur.com/fixture.mp4");
+    const container = document.querySelector("[data-media]");
+    container.style.overflow = "hidden";
+    container.innerHTML =
+      '<shreddit-player style="display:block;width:400px;height:300px;transform:translateX(200px)"></shreddit-player>';
+  });
+  const control = page.locator("[data-rdd-controls]");
+  await expect(control).toHaveCount(1);
+  const frame = await page.locator("[data-media]").boundingBox();
+  await expect
+    .poll(async () => (await control.boundingBox()).x)
+    .toBe(frame.x + frame.width - 40);
+  await page.locator("shreddit-player").evaluate((player) => {
+    player.style.transform = "translateX(420px)";
+  });
+  await expect(control).toBeHidden();
+  await page.locator("shreddit-player").evaluate((player) => {
+    player.style.transform = "none";
+  });
+  await expect(control).toBeVisible();
+});

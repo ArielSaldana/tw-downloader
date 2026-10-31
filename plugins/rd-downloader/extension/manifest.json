@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "In-house Reddit Media Saver",
   "description": "Save Reddit images, GIFs, hosted videos, and Redgifs embeds. Local code, no tracking or download servers.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minimum_chrome_version": "116",
   "permissions": ["downloads", "offscreen"],
   "icons": {

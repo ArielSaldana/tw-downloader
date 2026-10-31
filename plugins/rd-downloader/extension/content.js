@@ -13,7 +13,11 @@
     controls = new Map();
   let scheduled = false;
   const POST =
-    'shreddit-post, .thing[data-fullname^="t3_"], [data-testid="post-container"]';
+    'shreddit-post, .thing[data-fullname^="t3_"], [data-testid="post-container"], article[data-post-id]';
+  const PLAYER =
+    'shreddit-player, shreddit-embed, reddit-video, [data-testid="video-player"], [bundlename="shreddit_player_loader"]';
+  const MEDIA_CONTAINER =
+    'shreddit-post-media, [slot="post-media-container"], [slot="media-container"], shreddit-aspect-ratio';
   let observed = new WeakSet();
   const observer = new MutationObserver(scheduleRender);
   function roots(scope) {
@@ -25,17 +29,23 @@
         !observed.has(root)
       ) {
         observed.add(root);
+        root.addEventListener("scroll", schedulePositions, true);
         observer.observe(root, {
           childList: true,
           subtree: true,
           attributes: true,
           attributeFilter: [
             "src",
+            "data-src",
             "srcset",
+            "html",
             "poster",
             "href",
             "author",
             "post-id",
+            "data-post-id",
+            "id",
+            "post-type",
             "content-href",
             "permalink",
             "data-author",
@@ -53,15 +63,29 @@
   }
   const query = (scope, selector) =>
     roots(scope).flatMap((root) => [...root.querySelectorAll(selector)]);
+  const posts = () =>
+    query(document, POST).filter(
+      (post) => !post.matches("article") || !post.querySelector(POST),
+    );
+  const parentOf = (element) =>
+    element.parentElement || element.getRootNode().host;
+  function contains(ancestor, element) {
+    for (let node = parentOf(element); node; node = parentOf(node))
+      if (node === ancestor) return true;
+    return false;
+  }
   function context(post) {
     const link = post.querySelector(
       'a[data-click-id="comments"], a.comments, a[href*="/comments/"]',
     );
     const id =
-      (post.getAttribute("post-id") || post.dataset.fullname || "").replace(
-        /^t3_/,
-        "",
-      ) || postId(post.getAttribute("permalink") || link?.href || "");
+      (
+        post.getAttribute("post-id") ||
+        post.dataset.postId ||
+        post.dataset.fullname ||
+        (/^t3_/.test(post.id) ? post.id : "")
+      ).replace(/^t3_/, "") ||
+      postId(post.getAttribute("permalink") || link?.href || "");
     const authorLink = post.querySelector(
       'a.author, [data-testid="post_author_link"]',
     );
@@ -80,7 +104,16 @@
     };
   }
   function playerUrls(player) {
-    const urls = [player.getAttribute("src")];
+    const urls = [player.getAttribute("src"), player.getAttribute("data-src")];
+    // Reddit exposes third-party embeds here before creating their iframe,
+    // including players whose eventual shadow root cannot be inspected.
+    const html = player.getAttribute("html");
+    if (html && html.length <= 100000) {
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      for (const frame of template.content.querySelectorAll("iframe"))
+        urls.push(frame.getAttribute("src"), frame.getAttribute("data-src"));
+    }
     for (const name of ["packaged-media-json", "playback-media-json"]) {
       const value = player.getAttribute(name);
       if (!value || value.length > 100000) continue;
@@ -101,7 +134,7 @@
   }
   function pageIds() {
     return new Set(
-      query(document, POST)
+      posts()
         .map((post) => context(post).postId)
         .filter(Boolean),
     );
@@ -126,10 +159,60 @@
   function removeControl(target, control) {
     control.events.abort();
     clearTimeout(control.reset);
+    sizes.unobserve(target);
     control.host.remove();
-    if (control.positioned && target.style.position === "relative")
-      target.style.position = control.originalPosition;
     controls.delete(target);
+  }
+
+  let positionsScheduled = false;
+  const sizes = new ResizeObserver(schedulePositions);
+  function visibleBounds(target) {
+    const rect = target.getBoundingClientRect();
+    const bounds = {
+      top: Math.max(0, rect.top),
+      right: Math.min(innerWidth, rect.right),
+      bottom: Math.min(innerHeight, rect.bottom),
+      left: Math.max(0, rect.left),
+    };
+    if (getComputedStyle(target).visibility !== "visible") return null;
+    // Independent overlays must obey the player's scroll and gallery clipping.
+    for (let parent = parentOf(target); parent; parent = parentOf(parent)) {
+      const style = getComputedStyle(parent);
+      if (style.display === "contents") continue;
+      const clipsX = /hidden|clip|auto|scroll/.test(style.overflowX);
+      const clipsY = /hidden|clip|auto|scroll/.test(style.overflowY);
+      if (!clipsX && !clipsY) continue;
+      const clip = parent.getBoundingClientRect();
+      if (clipsX) {
+        bounds.left = Math.max(bounds.left, clip.left);
+        bounds.right = Math.min(bounds.right, clip.right);
+      }
+      if (clipsY) {
+        bounds.top = Math.max(bounds.top, clip.top);
+        bounds.bottom = Math.min(bounds.bottom, clip.bottom);
+      }
+    }
+    return bounds.right - bounds.left >= 48 && bounds.bottom - bounds.top >= 48
+      ? bounds
+      : null;
+  }
+  function positionControls() {
+    for (const [target, { host }] of controls) {
+      const bounds = target.isConnected && visibleBounds(target);
+      host.style.display = bounds ? "block" : "none";
+      if (bounds) {
+        host.style.left = `${bounds.right - 40}px`;
+        host.style.top = `${bounds.top + 8}px`;
+      }
+    }
+  }
+  function schedulePositions() {
+    if (positionsScheduled) return;
+    positionsScheduled = true;
+    requestAnimationFrame(() => {
+      positionsScheduled = false;
+      positionControls();
+    });
   }
 
   function mount(target, media) {
@@ -140,27 +223,19 @@
     }
     if (control) {
       control.media = media;
-      control.host.toggleAttribute(
-        "data-embedded",
-        Boolean(target.querySelector("iframe")),
-      );
       return;
     }
     const host = document.createElement("span");
     host.dataset.rddControls = "";
-    // Events inside another origin's iframe do not reliably reach its parent.
-    // Keep the small embed control visible so it is always reachable.
-    host.toggleAttribute(
-      "data-embedded",
-      Boolean(target.querySelector("iframe")),
-    );
+    // Player surfaces and cross-origin frames can consume pointer events.
+    host.toggleAttribute("data-video", media.kind === "video");
     if (target.matches(":hover")) host.dataset.visible = "";
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
-      :host { position:absolute; top:8px; right:8px; z-index:5; display:block; width:32px; height:32px; margin:0; padding:0; pointer-events:none; font:12px system-ui,sans-serif; }
+      :host { all:initial; position:fixed; z-index:2147483647; display:block; width:32px; height:32px; margin:0; padding:0; pointer-events:none; font:12px system-ui,sans-serif; }
       button { display:grid; place-items:center; width:32px; height:32px; padding:0; color:white; background:rgba(15,23,20,.7); border:1px solid rgba(255,255,255,.25); border-radius:50%; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .12s; font:18px system-ui,sans-serif; }
-      :host([data-visible]) button, :host([data-embedded]) button, :host(:focus-within) button { opacity:1; pointer-events:auto; }
+      :host([data-visible]) button, :host([data-video]) button, :host(:focus-within) button { opacity:1; pointer-events:auto; }
       button:hover { background:rgba(15,23,20,.92); } button:focus-visible { outline:2px solid white; outline-offset:2px; }
       button:disabled { cursor:wait; } svg { display:block; }
       [role=status] { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
@@ -180,16 +255,11 @@
     const status = document.createElement("span");
     status.setAttribute("role", "status");
     shadow.append(style, button, status);
-    const originalPosition = target.style.position;
-    const positioned = getComputedStyle(target).position === "static";
-    if (positioned) target.style.position = "relative";
     const events = new AbortController();
     control = {
       host,
       media,
       events,
-      originalPosition,
-      positioned,
       reset: null,
     };
     controls.set(target, control);
@@ -202,11 +272,17 @@
     );
     target.addEventListener(
       "pointerleave",
-      () => {
-        delete host.dataset.visible;
+      (event) => {
+        if (event.relatedTarget !== host) delete host.dataset.visible;
       },
       { signal: events.signal },
     );
+    host.addEventListener("pointerenter", () => {
+      host.dataset.visible = "";
+    });
+    host.addEventListener("pointerleave", () => {
+      if (!target.matches(":hover")) delete host.dataset.visible;
+    });
     button.addEventListener("pointerdown", (event) => event.stopPropagation());
     button.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -242,27 +318,29 @@
         }, 2500);
       }
     });
-    target.append(host);
+    // A child added to a custom player can be hidden by named slots, clipping,
+    // or a closed shadow root. Anchor an independent overlay to its bounds.
+    document.documentElement.append(host);
+    sizes.observe(target);
   }
 
-  function mediaTarget(element, post) {
+  function hasBox(element) {
     const rect = element.getBoundingClientRect();
-    if (rect.width < 60 || rect.height < 60) return null;
-    if (element.matches("shreddit-player"))
-      return element.parentElement || post;
+    return rect.width >= 60 && rect.height >= 60;
+  }
+  function mediaTarget(element, post) {
+    if (hasBox(element)) return element;
+    if (!element.matches(PLAYER)) return null;
+    const child = query(element, `video, iframe, img, ${MEDIA_CONTAINER}`).find(
+      hasBox,
+    );
+    if (child) return child;
     for (
-      let parent = element.parentElement;
-      parent && parent !== post.parentElement;
-      parent = parent.parentElement
+      let parent = parentOf(element);
+      parent && parent !== parentOf(post);
+      parent = parentOf(parent)
     ) {
-      const size = parent.getBoundingClientRect();
-      if (
-        size.width >= rect.width * 0.9 &&
-        size.height >= rect.height * 0.9 &&
-        size.width <= rect.width + 24 &&
-        size.height <= rect.height + 24
-      )
-        return parent;
+      if (hasBox(parent)) return parent;
     }
     return null;
   }
@@ -273,7 +351,7 @@
     const wanted = new Map(),
       visible = new Map();
     const all = [...catalog.values()];
-    for (const post of query(document, POST)) {
+    for (const post of posts()) {
       const info = context(post);
       if (!info.postId) continue;
       const destination =
@@ -287,28 +365,34 @@
       const known = all.filter((item) => item.postId === info.postId);
       for (const item of known)
         visible.set(`${item.postId}:${item.mediaId}`, item);
-      const players = query(post, "shreddit-player");
-      const elements = query(post, "img, video, shreddit-player, iframe");
+      const players = query(post, PLAYER);
+      const videoKeys = new Set();
+      const elements = [
+        ...new Set([
+          ...players,
+          ...query(post, "video, iframe"),
+          ...query(post, "img"),
+        ]),
+      ];
       for (const element of elements) {
         // Do not put a second button inside a player's shadow tree, or on comments.
         if (element.closest("shreddit-comment, .comment")) continue;
-        if (
-          !element.matches("shreddit-player") &&
-          players.some(
-            (player) =>
-              player.contains(element) ||
-              roots(player).some(
-                (root) => root !== player && root.contains(element),
-              ),
-          )
-        )
-          continue;
+        if (players.some((player) => contains(player, element))) continue;
         const target = mediaTarget(element, post);
         if (!target) continue;
+        const playerSources = [
+          ...playerUrls(element),
+          ...query(element, `${PLAYER}, video, iframe, source`).flatMap(
+            (node) => [node.currentSrc, node.src, ...playerUrls(node)],
+          ),
+        ].filter(videoUrl);
         const source =
-          element.currentSrc || element.src || element.getAttribute("src");
+          element.currentSrc ||
+          element.src ||
+          element.getAttribute("src") ||
+          playerSources[0];
         const isVideo =
-          element.matches("video, shreddit-player, iframe") ||
+          element.matches(`video, iframe, ${PLAYER}`) ||
           Boolean(videoUrl(source) || videoUrl(destination));
         const poster = assetKey(
           element.poster || element.getAttribute("poster"),
@@ -329,7 +413,10 @@
           const videos = known.filter((item) => item.kind === "video");
           if (videos.length === 1) media = videos[0];
         }
-        const externalClip = redgifsId(destination) || redgifsId(source);
+        const externalClip =
+          redgifsId(destination) ||
+          redgifsId(source) ||
+          playerSources.map(redgifsId).find(Boolean);
         if (externalClip)
           media = normalizeMedia({
             ...info,
@@ -343,12 +430,7 @@
         if (!media) {
           if (unsupportedLink && !isVideo) continue;
           const urls = isVideo
-            ? [
-                source,
-                ...playerUrls(element),
-                ...query(element, "source").map((item) => item.src),
-                destination,
-              ].filter(videoUrl)
+            ? [source, ...playerSources, destination].filter(videoUrl)
             : [
                 originalImage(
                   /\.gif(?:\?|$)/i.test(imageUrl(destination) || "")
@@ -380,6 +462,28 @@
           });
         }
         if (media) {
+          const key = `${media.postId}:${media.mediaId}`;
+          if (media.kind === "video") {
+            if (videoKeys.has(key)) continue;
+            videoKeys.add(key);
+          }
+          wanted.set(target, media);
+          visible.set(key, media);
+        }
+      }
+      // Lazy players can expose a destination long before any media element.
+      // Keep that post's video reachable while Reddit hydrates its player.
+      if (!videoKeys.size) {
+        const media =
+          (known.length === 1 && known[0].kind === "video" && known[0]) ||
+          normalizeMedia({
+            ...info,
+            mediaId: info.postId,
+            kind: "video",
+            variants: [{ url: videoUrl(destination) }],
+          });
+        const target = query(post, MEDIA_CONTAINER).find(hasBox) || post;
+        if (media && hasBox(target)) {
           wanted.set(target, media);
           visible.set(`${media.postId}:${media.mediaId}`, media);
         }
@@ -397,6 +501,7 @@
         removeControl(target, control);
     }
     for (const [target, media] of wanted) mount(target, media);
+    positionControls();
   }
   function scheduleRender() {
     if (scheduled) return;
@@ -452,6 +557,7 @@
     // Custom elements can attach shadow roots without a light-DOM mutation.
     setInterval(scheduleRender, 2000);
     window.addEventListener("resize", scheduleRender);
+    window.addEventListener("resize", schedulePositions);
     scheduleRender();
   }
   if (document.body) start();
