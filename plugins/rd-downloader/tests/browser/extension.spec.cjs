@@ -356,3 +356,147 @@ test("Reddit video placeholders save the video rather than its poster", async ()
     0,
   );
 });
+
+async function redgifsPost(
+  destination = "https://www.redgifs.com/watch/CalmBlueOtter",
+  iframe = "https://www.redgifs.com/ifr/CalmBlueOtter",
+) {
+  await page.evaluate(
+    ({ destination, iframe }) => {
+      const post = document.querySelector("shreddit-post");
+      post.setAttribute("post-type", "link");
+      post.setAttribute("content-href", destination);
+      document.querySelector("[data-media]").innerHTML =
+        `<iframe title="Embedded video" src="${iframe}" style="border:0;width:400px;height:300px"></iframe>`;
+    },
+    { destination, iframe },
+  );
+}
+test("Redgifs iframe downloads resolve only on click and retain the Reddit author folder", async () => {
+  const api = [];
+  await context.route("https://www.redgifs.com/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><style>body{margin:0;display:grid;place-content:center;height:100vh;background:#182c30;color:#fff;font:16px system-ui}p{text-align:center}</style><p>&#9654;</p><p>Embedded video fixture</p>",
+    }),
+  );
+  await context.route("https://api.redgifs.com/**", (route) => {
+    api.push({
+      url: route.request().url(),
+      headers: route.request().headers(),
+    });
+    return route.fulfill({
+      json: route.request().url().endsWith("/auth/temporary")
+        ? { token: "fixture-token" }
+        : {
+            gif: {
+              id: "calmblueotter",
+              width: 1920,
+              height: 1080,
+              urls: {
+                hd: "https://thumbs2.redgifs.com/CalmBlueOtter.mp4",
+                sd: "https://thumbs2.redgifs.com/CalmBlueOtter-mobile.mp4",
+              },
+            },
+          },
+    });
+  });
+  await redgifsPost();
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  const panel = await popup();
+  await expect(panel.getByRole("button", { name: "Save MP4" })).toHaveCount(1);
+  expect(api).toHaveLength(0);
+  await panel.close();
+  const before = await page.locator("[data-next]").boundingBox();
+  await page
+    .locator("shreddit-post")
+    .screenshot({ path: "plugins/rd-downloader/docs/redgifs-inline.png" });
+  await clickInline();
+  await expect
+    .poll(() => worker.evaluate(() => downloadRequests.length))
+    .toBe(1);
+  const [saved] = await worker.evaluate(() => downloadRequests);
+  expect(saved.url).toBe("https://thumbs2.redgifs.com/CalmBlueOtter.mp4");
+  expect(saved.filename).toBe(
+    "reddit/@original_poster/reddit_abc123_abc123_1920x1080.mp4",
+  );
+  expect(api).toHaveLength(2);
+  expect(api[1].headers.authorization).toBe("Bearer fixture-token");
+  expect(await page.locator("[data-next]").boundingBox()).toEqual(before);
+});
+test("Redgifs API failures surface in the popup without downloading an HTML page or preview", async () => {
+  await context.route("https://www.redgifs.com/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>Fixture</p>" }),
+  );
+  await context.route("https://api.redgifs.com/**", (route) =>
+    route.fulfill({ status: 403, json: { error: "Unavailable" } }),
+  );
+  await redgifsPost();
+  const panel = await popup();
+  await panel.getByRole("button", { name: "Save MP4" }).click();
+  await expect(panel.locator("#status")).toContainText(
+    "Redgifs request failed (403)",
+  );
+  expect(await worker.evaluate(() => downloadRequests.length)).toBe(0);
+});
+test("Iframe-only Redgifs posts are detected and unrelated embeds stay unsupported", async () => {
+  await context.route("https://www.redgifs.com/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>Fixture</p>" }),
+  );
+  await context.route("https://example.org/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<p>Unrelated embed</p>" }),
+  );
+  await redgifsPost("https://example.org/link");
+  const panel = await popup();
+  await expect(panel.getByRole("button", { name: "Save MP4" })).toHaveCount(1);
+  await panel.close();
+  await redgifsPost("https://example.org/link", "https://example.org/player");
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(0);
+  const empty = await popup();
+  await expect(empty.locator("#empty")).toBeVisible();
+});
+test("GIF MP4 sources in external link posts preserve the full signed URL and use MP4 filenames", async () => {
+  const url =
+    "https://external-preview.redd.it/animation.gif?format=mp4&s=signed";
+  await context.route("https://external-preview.redd.it/**", (route) =>
+    route.fulfill({
+      contentType: "video/mp4",
+      body: fs.readFileSync(path.join(__dirname, "../assets/video.mp4")),
+    }),
+  );
+  await page.evaluate((url) => {
+    const post = document.querySelector("shreddit-post");
+    post.setAttribute("post-type", "link");
+    post.setAttribute("content-href", "https://example.org/animation");
+    document.querySelector("[data-media]").innerHTML =
+      `<video controls loop muted style="width:400px;height:300px"><source type="video/mp4" src="${url}"></video>`;
+  }, url);
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await clickInline();
+  await expect
+    .poll(() => worker.evaluate(() => downloadRequests.length))
+    .toBe(1);
+  const [saved] = await worker.evaluate(() => downloadRequests);
+  expect(saved.url).toBe(url);
+  expect(saved.filename).toMatch(/\.mp4$/);
+  const panel = await popup();
+  await expect(panel.getByRole("button", { name: "Save MP4" })).toHaveCount(1);
+  await expect(panel.getByRole("button", { name: "Save image" })).toHaveCount(
+    0,
+  );
+});
+test("GIF posts save the original animation when Reddit renders a still preview", async () => {
+  await page
+    .locator("shreddit-post")
+    .evaluate((post) =>
+      post.setAttribute("content-href", "https://i.redd.it/animation.gif"),
+    );
+  await expect(page.locator("[data-rdd-controls]")).toHaveCount(1);
+  await clickInline();
+  await expect
+    .poll(() => worker.evaluate(() => downloadRequests.length))
+    .toBe(1);
+  const [saved] = await worker.evaluate(() => downloadRequests);
+  expect(saved.url).toBe("https://i.redd.it/animation.gif");
+  expect(saved.filename).toMatch(/\.gif$/);
+});

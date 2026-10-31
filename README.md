@@ -6,7 +6,7 @@ A collection of small, auditable Chrome extensions. Each plugin installs indepen
 | ------------------------------------------------ | -------------------------------------------------------- | --------------------------------------- | ---------------------------------- |
 | [tw-downloader](plugins/tw-downloader/README.md) | X/Twitter images, MP4 videos, GIF posts                  | `Downloads/twitter/@original_poster/`   | `plugins/tw-downloader/extension/` |
 | [ig-downloader](plugins/ig-downloader/README.md) | Instagram photos, reels, MP4 videos, and mixed carousels | `Downloads/instagram/@original_poster/` | `plugins/ig-downloader/extension/` |
-| [rd-downloader](plugins/rd-downloader/README.md) | Reddit images, galleries, and videos with audio          | `Downloads/reddit/@username/`           | `plugins/rd-downloader/extension/` |
+| [rd-downloader](plugins/rd-downloader/README.md) | Reddit images, GIFs, and Reddit/Redgifs videos           | `Downloads/reddit/@username/`           | `plugins/rd-downloader/extension/` |
 
 All plugins provide compact hover/focus download icons that don't shift posts, separate controls for album items, and a light/dark toolbar popup with video quality choices. They use the post's own author metadata rather than the profile you're browsing; unknown handles go into `@unknown`.
 

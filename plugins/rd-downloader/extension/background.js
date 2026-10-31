@@ -1,5 +1,5 @@
-importScripts("media.js");
-const { normalizeMedia, filename, isRedditPage } =
+importScripts("media.js", "redgifs.js");
+const { normalizeMedia, filename, isRedditPage, redgifsId } =
   globalThis.__RD_DOWNLOADER_MEDIA_V1__;
 let creating;
 async function offscreen() {
@@ -59,6 +59,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     let blobUrl;
     try {
       let url = variant.url;
+      let downloadVariant = variant;
+      if (media.kind === "video" && redgifsId(url)) {
+        downloadVariant =
+          await globalThis.__RD_DOWNLOADER_REDGIFS_V1__.resolve(url);
+        url = downloadVariant.url;
+      }
       if (media.kind === "video" && new URL(url).hostname === "v.redd.it") {
         await offscreen();
         const result = await chrome.runtime.sendMessage({
@@ -81,7 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       const id = await chrome.downloads.download({
         url,
-        filename: filename(media, variant),
+        filename: filename(media, downloadVariant),
         conflictAction: "uniquify",
         saveAs: false,
       });

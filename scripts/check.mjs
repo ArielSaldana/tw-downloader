@@ -31,7 +31,12 @@ for (const plugin of selectedPlugins()) {
       bundle,
       "Run npm run build for Reddit mux code",
     );
-    for (const file of ["offscreen.html", "offscreen.js", "MP4BOX-LICENSE.txt"])
+    for (const file of [
+      "offscreen.html",
+      "offscreen.js",
+      "redgifs.js",
+      "MP4BOX-LICENSE.txt",
+    ])
       await access(new URL(file, directory));
   }
   for (const key of [

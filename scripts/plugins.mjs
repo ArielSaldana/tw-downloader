@@ -11,7 +11,7 @@ export const plugins = [
       "https://new.reddit.com/*",
     ],
     permissions: ["downloads", "offscreen"],
-    hosts: ["https://v.redd.it/*"],
+    hosts: ["https://v.redd.it/*", "https://api.redgifs.com/*"],
   },
   {
     id: "tw-downloader",

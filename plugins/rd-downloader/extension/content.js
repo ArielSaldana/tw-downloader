@@ -6,6 +6,7 @@
     postId,
     imageUrl,
     videoUrl,
+    redgifsId,
     originalImage,
   } = globalThis.__RD_DOWNLOADER_MEDIA_V1__;
   const catalog = new Map(),
@@ -139,17 +140,27 @@
     }
     if (control) {
       control.media = media;
+      control.host.toggleAttribute(
+        "data-embedded",
+        Boolean(target.querySelector("iframe")),
+      );
       return;
     }
     const host = document.createElement("span");
     host.dataset.rddControls = "";
+    // Events inside another origin's iframe do not reliably reach its parent.
+    // Keep the small embed control visible so it is always reachable.
+    host.toggleAttribute(
+      "data-embedded",
+      Boolean(target.querySelector("iframe")),
+    );
     if (target.matches(":hover")) host.dataset.visible = "";
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
       :host { position:absolute; top:8px; right:8px; z-index:5; display:block; width:32px; height:32px; margin:0; padding:0; pointer-events:none; font:12px system-ui,sans-serif; }
       button { display:grid; place-items:center; width:32px; height:32px; padding:0; color:white; background:rgba(15,23,20,.7); border:1px solid rgba(255,255,255,.25); border-radius:50%; cursor:pointer; opacity:0; pointer-events:none; transition:opacity .12s; font:18px system-ui,sans-serif; }
-      :host([data-visible]) button, :host(:focus-within) button { opacity:1; pointer-events:auto; }
+      :host([data-visible]) button, :host([data-embedded]) button, :host(:focus-within) button { opacity:1; pointer-events:auto; }
       button:hover { background:rgba(15,23,20,.92); } button:focus-visible { outline:2px solid white; outline-offset:2px; }
       button:disabled { cursor:wait; } svg { display:block; }
       [role=status] { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
@@ -265,18 +276,19 @@
     for (const post of query(document, POST)) {
       const info = context(post);
       if (!info.postId) continue;
-      const destination = post.getAttribute("content-href") || post.dataset.url;
-      if (
+      const destination =
+        post.getAttribute("content-href") ||
+        post.dataset.url ||
+        post.querySelector('a.title, a[data-testid="outbound-link"]')?.href;
+      const unsupportedLink =
         post.getAttribute("post-type") === "link" &&
         !imageUrl(destination) &&
-        !videoUrl(destination)
-      )
-        continue;
+        !videoUrl(destination);
       const known = all.filter((item) => item.postId === info.postId);
       for (const item of known)
         visible.set(`${item.postId}:${item.mediaId}`, item);
       const players = query(post, "shreddit-player");
-      const elements = query(post, "img, video, shreddit-player");
+      const elements = query(post, "img, video, shreddit-player, iframe");
       for (const element of elements) {
         // Do not put a second button inside a player's shadow tree, or on comments.
         if (element.closest("shreddit-comment, .comment")) continue;
@@ -293,11 +305,11 @@
           continue;
         const target = mediaTarget(element, post);
         if (!target) continue;
-        const isVideo =
-          element.matches("video, shreddit-player") ||
-          Boolean(videoUrl(destination));
         const source =
           element.currentSrc || element.src || element.getAttribute("src");
+        const isVideo =
+          element.matches("video, shreddit-player, iframe") ||
+          Boolean(videoUrl(source) || videoUrl(destination));
         const poster = assetKey(
           element.poster || element.getAttribute("poster"),
         );
@@ -317,15 +329,33 @@
           const videos = known.filter((item) => item.kind === "video");
           if (videos.length === 1) media = videos[0];
         }
+        const externalClip = redgifsId(destination) || redgifsId(source);
+        if (externalClip)
+          media = normalizeMedia({
+            ...info,
+            ...media,
+            mediaId: info.postId,
+            kind: "video",
+            variants: [
+              { url: `https://www.redgifs.com/watch/${externalClip}` },
+            ],
+          });
         if (!media) {
+          if (unsupportedLink && !isVideo) continue;
           const urls = isVideo
             ? [
+                source,
                 ...playerUrls(element),
                 ...query(element, "source").map((item) => item.src),
-                post.getAttribute("content-href"),
-                post.dataset.url,
+                destination,
               ].filter(videoUrl)
-            : [originalImage(source)].filter(Boolean);
+            : [
+                originalImage(
+                  /\.gif(?:\?|$)/i.test(imageUrl(destination) || "")
+                    ? destination
+                    : source,
+                ),
+              ].filter(Boolean);
           const variants = urls.map((url) => ({
             url,
             width: isVideo
@@ -344,6 +374,7 @@
                   .pop()
                   ?.replace(/\.[^.]+$/, ""),
             kind: isVideo ? "video" : "image",
+            isGif: post.getAttribute("post-type") === "gif",
             variants,
             previews: [source, element.poster].filter(imageUrl),
           });

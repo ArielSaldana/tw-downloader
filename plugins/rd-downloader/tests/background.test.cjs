@@ -26,10 +26,12 @@ function setup(failure) {
         },
       },
     },
-    importScripts: () =>
-      vm.runInContext(
-        readFileSync("plugins/rd-downloader/extension/media.js", "utf8"),
-        context,
+    importScripts: (...files) =>
+      files.forEach((file) =>
+        vm.runInContext(
+          readFileSync(`plugins/rd-downloader/extension/${file}`, "utf8"),
+          context,
+        ),
       ),
   });
   vm.runInContext(

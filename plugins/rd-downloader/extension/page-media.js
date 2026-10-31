@@ -10,10 +10,12 @@
   ];
   const clean = (value) =>
     typeof value === "string" ? value.replace(/&amp;/g, "&") : "";
-  function parsed(value) {
+  function parsed(value, allowTime = false) {
     if (typeof value !== "string" || value.length > 8192) return null;
     try {
       const url = new URL(clean(value));
+      if (allowTime && /^#t=\d+(?:\.\d+)?(?:,\d+(?:\.\d+)?)?$/.test(url.hash))
+        url.hash = "";
       return url.protocol === "https:" &&
         !url.username &&
         !url.password &&
@@ -38,22 +40,56 @@
       return "";
     }
   }
+  const redditCdn = (url) =>
+    ["i.redd.it", "preview.redd.it", "external-preview.redd.it"].includes(
+      url?.hostname,
+    );
+  const redgifsCdn = (url) =>
+    /^(?:thumbs\d*|media)\.redgifs\.com$/.test(url?.hostname || "");
+  function redgifsId(value) {
+    const url = parsed(value, true);
+    return url && ["redgifs.com", "www.redgifs.com"].includes(url.hostname)
+      ? url.pathname
+          .match(/^\/(?:watch|ifr)\/([a-z0-9]{1,100})\/?$/i)?.[1]
+          .toLowerCase() || ""
+      : "";
+  }
+  function redgifsMediaUrl(value) {
+    const url = parsed(value, true);
+    return redgifsCdn(url) && /^\/[a-z0-9/_-]+\.mp4$/i.test(url.pathname)
+      ? url.href
+      : null;
+  }
   function imageUrl(value) {
     const url = parsed(value);
     return url &&
-      ["i.redd.it", "preview.redd.it", "external-preview.redd.it"].includes(
-        url.hostname,
+      (redditCdn(url) || redgifsCdn(url) || url.hostname === "i.imgur.com") &&
+      !["mp4", "webm"].includes(
+        url.searchParams.get("format")?.toLowerCase(),
       ) &&
       /\.(?:jpe?g|png|gif|webp|avif)$/i.test(url.pathname)
       ? url.href
       : null;
   }
   function videoUrl(value) {
-    const url = parsed(value);
+    const url = parsed(value, true);
     if (!url) return null;
+    const redgifs = redgifsId(url.href);
+    if (redgifs) return `https://www.redgifs.com/watch/${redgifs}`;
+    const direct = redgifsMediaUrl(url.href);
+    if (direct) return direct;
     if (
-      ["preview.redd.it", "i.redd.it"].includes(url.hostname) &&
-      /\.mp4$/i.test(url.pathname)
+      url.hostname === "i.imgur.com" &&
+      /^\/[a-z0-9]+\.(?:mp4|gifv)$/i.test(url.pathname)
+    ) {
+      url.pathname = url.pathname.replace(/\.gifv$/i, ".mp4");
+      return url.href;
+    }
+    if (
+      redditCdn(url) &&
+      (/\.mp4$/i.test(url.pathname) ||
+        (url.searchParams.get("format")?.toLowerCase() === "mp4" &&
+          /^\/[a-z0-9_-]+(?:\.gif)?$/i.test(url.pathname)))
     )
       return url.href;
     return url.hostname === "v.redd.it" &&
@@ -82,6 +118,7 @@
     const base = videoBase(value);
     if (!base) return null;
     const url = new URL(value);
+    if (/\.mpd$/i.test(url.pathname)) return url.href;
     return `${base}DASHPlaylist.mpd${url.search}`;
   }
   function originalImage(value) {
@@ -97,9 +134,20 @@
   function assetKey(value) {
     const url = parsed(imageUrl(value) || videoUrl(value));
     if (!url) return "";
-    return url.hostname === "v.redd.it"
-      ? videoBase(url.href)
-      : new URL(originalImage(url.href) || url.href).pathname;
+    if (redgifsId(url.href)) return `redgifs:/${redgifsId(url.href)}`;
+    if (redgifsCdn(url))
+      return `redgifs:/${url.pathname.split("/").pop().split(/[.-]/)[0].toLowerCase()}`;
+    if (url.hostname === "v.redd.it") return videoBase(url.href);
+    const namespace = ["external-preview.redd.it", "i.imgur.com"].includes(
+      url.hostname,
+    )
+      ? url.hostname
+      : "reddit";
+    const path = new URL(originalImage(url.href) || url.href).pathname.replace(
+      /^.*-v\d+-([a-z0-9]+\.[a-z0-9]+)$/i,
+      "/$1",
+    );
+    return `${namespace}:${path}`;
   }
   const array = (value) => (Array.isArray(value) ? value : []);
   const dimension = (value) =>
@@ -146,7 +194,10 @@
       ],
       variants: [...variants.values()].sort(
         (a, b) =>
-          b.width * b.height - a.width * a.height || b.bitrate - a.bitrate,
+          Number(Boolean(redgifsId(b.url))) -
+            Number(Boolean(redgifsId(a.url))) ||
+          b.width * b.height - a.width * a.height ||
+          b.bitrate - a.bitrate,
       ),
     };
   }
@@ -179,17 +230,35 @@
           ])
           .filter(Boolean);
         const gallery = source.gallery_data?.items;
+        const destination = source.url_overridden_by_dest || source.url;
+        const embed = (
+          source.secure_media?.oembed?.html ||
+          source.media?.oembed?.html ||
+          ""
+        ).match?.(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i)?.[1];
+        const redgifs = redgifsId(destination) || redgifsId(embed);
         const video =
           source.secure_media?.reddit_video ||
           source.media?.reddit_video ||
           source.preview?.reddit_video_preview;
-        if (Array.isArray(gallery)) {
+        if (redgifs) {
+          add({
+            ...context,
+            mediaId: id,
+            kind: "video",
+            previews,
+            variants: [{ url: `https://www.redgifs.com/watch/${redgifs}` }],
+          });
+        } else if (Array.isArray(gallery)) {
           for (const item of gallery) {
             const data = source.media_metadata?.[item?.media_id];
             if (!data || data.status !== "valid" || !data.s) continue;
             const animated = data.e === "AnimatedImage";
-            const url = animated ? data.s.mp4 || data.s.gif : data.s.u;
-            const kind = animated && data.s.mp4 ? "video" : "image";
+            const url = animated
+              ? [data.s.mp4, data.s.gif, data.s.u].find(videoUrl) ||
+                [data.s.gif, data.s.u].find(imageUrl)
+              : data.s.u;
+            const kind = videoUrl(url) ? "video" : "image";
             add({
               ...context,
               mediaId: item.media_id,
@@ -221,8 +290,8 @@
             ],
           });
         } else {
-          const destination = source.url_overridden_by_dest || source.url;
           const animation = source.preview?.images?.[0]?.variants?.mp4?.source;
+          const gif = source.preview?.images?.[0]?.variants?.gif?.source;
           if (animation)
             add({
               ...context,
@@ -257,6 +326,15 @@
               previews,
               variants: [{ url: destination }],
             });
+          else if (gif && imageUrl(gif.url))
+            add({
+              ...context,
+              mediaId: id,
+              kind: "image",
+              isGif: true,
+              previews,
+              variants: [gif],
+            });
         }
       }
       for (const [key, value] of Object.entries(node))
@@ -290,6 +368,8 @@
     postId,
     imageUrl,
     videoUrl,
+    redgifsId,
+    redgifsMediaUrl,
     videoBase,
     trackUrl,
     manifestUrl,
